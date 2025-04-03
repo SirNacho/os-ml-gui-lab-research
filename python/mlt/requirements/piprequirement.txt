@@ -1,0 +1,18 @@
+#Python pip package list created by Sir Nacho
+#pip install -r python/requirements/piprequirements.txt
+
+#Regular Requirements For Learning ML
+
+Numpy=1.21.2
+SciPy=1.7.0
+SciKit-learn=1.0
+MatPlotLib=3.4.3
+pandas=1.3.2
+
+
+#Requirements with specific versions
+#docopt == 0.6.1             # Version Matching. Must be version 0.6.1
+#keyring >= 4.1.1            # Minimum version 4.1.1
+#coverage != 3.5             # Version Exclusion. Anything except version 3.5
+#Mopidy-Dirble ~= 1.1        # Compatible release. Same as >= 1.1, == 1.*
+
