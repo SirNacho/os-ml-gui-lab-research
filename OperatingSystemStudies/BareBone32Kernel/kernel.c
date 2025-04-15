@@ -1,96 +1,115 @@
-//This script is created by Sir Nacho at 4/3/2025
-
-//CREDIT: https://wiki.osdev.org/User:Zesterer/Bare_Bones
-
-//Nice that GCC provides these headers
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+/* Check if the compiler thinks you are targeting the wrong operating system. */
 #if defined(__linux__)
-  #error "This code must be compiled with a cross-compiler. Try again!"
-#elif !defined(__i386__)
-  #error "This code must be compiled with an x86-elf compiler. Try again!"
+#error "You are not using a cross-compiler, you will most certainly run into trouble"
 #endif
 
-//This here is the VGA textmode buffer. To display the text, we must write 
-//data to this memory location.
+/* This tutorial will only work for the 32-bit ix86 targets. */
+#if !defined(__i386__)
+#error "This tutorial needs to be compiled with a ix86-elf compiler"
+#endif
 
-volatile uint16_t* vga_buffer = (uint16_t*)0xB8000;
+/* Hardware text mode color constants. */
+enum vga_color {
+	VGA_COLOR_BLACK = 0,
+	VGA_COLOR_BLUE = 1,
+	VGA_COLOR_GREEN = 2,
+	VGA_COLOR_CYAN = 3,
+	VGA_COLOR_RED = 4,
+	VGA_COLOR_MAGENTA = 5,
+	VGA_COLOR_BROWN = 6,
+	VGA_COLOR_LIGHT_GREY = 7,
+	VGA_COLOR_DARK_GREY = 8,
+	VGA_COLOR_LIGHT_BLUE = 9,
+	VGA_COLOR_LIGHT_GREEN = 10,
+	VGA_COLOR_LIGHT_CYAN = 11,
+	VGA_COLOR_LIGHT_RED = 12,
+	VGA_COLOR_LIGHT_MAGENTA = 13,
+	VGA_COLOR_LIGHT_BROWN = 14,
+	VGA_COLOR_WHITE = 15,
+};
 
-//Btw, the VGA buffer has a default size of 80x25 chars.
-const int VGA_COLS = 80;
-const int VGA_ROWS = 25;
-
-//Starting text position.
-int term_col = 0;
-int term_row = 0;
-uint8_t term_color = 0x0F; // <---- Feel free to change the color. By Default,
-                           // Default: Black background and White Foreground
-
-//This funct initiates the terminal by clearing it.
-void term_init()
+static inline uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) 
 {
-  for (int col = 0; col < VGA_COLS; col++)
-  {
-    for (int row = 0; row < VGA_ROWS; row++)
-    {
-      //The VGA textmode buffer has size (VGA_COLS * VGA_ROWS),
-      //We could use this to find the index of the buffer for our char
-      const size_t index = (VGA_COLS * row) + col;
-      
-      //NOTES: Entries in the VGA buffer take the binary form of: BBBBFFFFCCCCCCCC
-      // - B is the background color
-      // - F is the foreground color
-      // - C is the ASCII char 
-      
-      vga_buffer[index] = ((uint16_t) term_color << 8) | ' '; //Set the char to blank (space) char.
-    }
-  }
+	return fg | bg << 4;
 }
 
-//This funct places a single char to the screen
-void term_putc(char c)
+static inline uint16_t vga_entry(unsigned char uc, uint8_t color) 
 {
-  switch (c) //NOTE: you don't want to display all char.
-  {
-    case '\n': // New line char should return the column to 0, and increment the row
-        {
-          term_col = 0;
-          term_row++;
-          break;
-        }
-    default: //Normal char just get display and increment the column
-        {
-            const size_t index = (VGA_COLS * term_row) + term_col;
-            vga_buffer[index] = ((uint16_t)term_color << 8) | c;
-            term_col++;
-        }
-  }
-  
-  //If the char gets passed the last row, we reset both column and row to 0 to loop back to the top of the screen
-  if (term_col >= VGA_COLS) 
-  {
-    term_col = 0;
-    term_row = 0;
-  }
+	return (uint16_t) uc | (uint16_t) color << 8;
 }
 
-//This funct is to print the whole string to the screen
-void term_print(const char* str) 
+size_t strlen(const char* str) 
 {
-  for (size_t i = 0; str[i] != '\0'; i++) // keep placing char until the null-terminating char '\0'
-  {
-    term_putc(str[i]);
-  }
+	size_t len = 0;
+	while (str[len])
+		len++;
+	return len;
 }
 
-//The main function of the kernel!!!
-void kernel_main() 
+#define VGA_WIDTH   80
+#define VGA_HEIGHT  25
+#define VGA_MEMORY  0xB8000 
+
+size_t terminal_row;
+size_t terminal_column;
+uint8_t terminal_color;
+uint16_t* terminal_buffer = (uint16_t*)VGA_MEMORY;
+
+void terminal_initialize(void) 
 {
-  //Initiate the terminal
-  term_init();
-  
-  //Print the messages
-  term_print("Hello from DePaul University!!!\n");
-  term_print("This is a message from Sir Nacho!\n");
+	terminal_row = 0;
+	terminal_column = 0;
+	terminal_color = vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
+	
+	for (size_t y = 0; y < VGA_HEIGHT; y++) {
+		for (size_t x = 0; x < VGA_WIDTH; x++) {
+			const size_t index = y * VGA_WIDTH + x;
+			terminal_buffer[index] = vga_entry(' ', terminal_color);
+		}
+	}
+}
+
+void terminal_setcolor(uint8_t color) 
+{
+	terminal_color = color;
+}
+
+void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) 
+{
+	const size_t index = y * VGA_WIDTH + x;
+	terminal_buffer[index] = vga_entry(c, color);
+}
+
+void terminal_putchar(char c) 
+{
+	terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
+	if (++terminal_column == VGA_WIDTH) {
+		terminal_column = 0;
+		if (++terminal_row == VGA_HEIGHT)
+			terminal_row = 0;
+	}
+}
+
+void terminal_write(const char* data, size_t size) 
+{
+	for (size_t i = 0; i < size; i++)
+		terminal_putchar(data[i]);
+}
+
+void terminal_writestring(const char* data) 
+{
+	terminal_write(data, strlen(data));
+}
+
+void kernel_main(void) 
+{
+	/* Initialize terminal interface */
+	terminal_initialize();
+
+	/* Newline support is left as an exercise. */
+	terminal_writestring("Hello, kernel World!\n");
 }
